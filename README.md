@@ -8,7 +8,7 @@ A few examples of control system challenges in the LIGO project
 2. Filter sensor noise to be < 1e-19 m/rHz @ 10 Hz
 3. Minimize relative motion of interferometric DoFs
 4. Shape opto-mechanical response to all for 'simple' global alignment controls
-
+5. More ?
 
 ### Angular control of a Fabry-Perot cavity with a quad suspension on each end
 1. Need to have enough gain below 3 Hz
