@@ -36,7 +36,7 @@ end
 estimated_run_time = 2.4*Nswarms;
 disp(['Estimated run time = ',...
       num2str(estimated_run_time),...
-      [' sec = ' num2str(estimated_run_time/60),'] min = ',...
+      ' sec = ' num2str(estimated_run_time/60),' min = ',...
        num2str(estimated_run_time/3600),' hrs'])
 polesz_real = 2*pi*[20 20 100];
 zerosz_real = 2*pi*[3e-3 250];
@@ -101,7 +101,7 @@ plant_params.debug = debug;
 %% Parameters, transfer functions of components
 
 % meters / Newton
-load ../Data/simple_long_quadmodel
+load simple_long_quadmodel
 
 % quad model number of ins and outs
 [quad_output_num,quad_input_num] = size(simple_long_quadmodel);
@@ -188,10 +188,10 @@ Hlong = make_filter_from_params_DampQuad(xout, plant_params, debug, set_logspace
 
 % save these temporary results: this allows running on a remote, Dropbox
 % synced machine and then using the code block below to make the plots
-save ../Data/SwarmResults.mat xout damped_quad_model plant_params Hlong ff minf maxf
+save Data/SwarmResults.mat xout damped_quad_model plant_params Hlong ff minf maxf
 
 %% list final costs
-load ../Data/SwarmResults.mat
+load Data/SwarmResults.mat
 
 pc = pole(damped_quad_model);
 real_pc = real(pc);
@@ -332,5 +332,5 @@ figure(222),bode(prescale(plant_params.plant*Hlong,{2*pi*0.01,2*pi*1000}))
 
 
 %% save data
-save(['../Data/QuadDampResults_' tnowstr],'Hlong', 'plant_params', 'xout', 'damped_quad_model', 'Hlong_input_index', 'out', 'ff', 'minf', 'maxf', 'ww', 'Nswarms', 'quadratic_linear_crossover_cost')
+save(['Data/QuadDampResults_' tnowstr],'Hlong', 'plant_params', 'xout', 'damped_quad_model', 'Hlong_input_index', 'out', 'ff', 'minf', 'maxf', 'ww', 'Nswarms', 'quadratic_linear_crossover_cost')
 
