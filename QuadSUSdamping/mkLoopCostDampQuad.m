@@ -59,7 +59,7 @@ if stability_cost == 0
 %     pole_freq = mag(pc);
     pole_angle = angle(pc);
     damp_ratio = sin(pole_angle-pi/2);
-    Q = 1./damp_ratio;
+    Q = 0.5./damp_ratio;
     max_Q = max(Q);
     Qscale = 4;     % try to keep the closed loop Q below this number
     Qcost = min((max_Q/Qscale)^2,...
