@@ -14,7 +14,7 @@ set_logspace = 1;
 quadratic_linear_crossover_cost = 1000;
 linear_crossover_factor = sqrt(quadratic_linear_crossover_cost);
 
-Nswarms = 30;
+Nswarms = 30; % 10000
 
 % setting the bounds for the variables to be searched over
 fmin    = 2*pi*2e-3;
@@ -33,7 +33,6 @@ if set_logspace
 end
 
 % set initial poles & zeros
-Nswarms = 10000;
 estimated_run_time = 2.4*Nswarms;
 disp(['Estimated run time = ',...
       num2str(estimated_run_time),...
