@@ -1,29 +1,37 @@
 % Global loop optimization
 %
-% this particular example does a dmaping loop for the quad L DOF
-% assuming a single cavity pole and a single pendulum actuator
+% This particular example makes a damping loop for the quad Longitudinal DOF (parallel to the laser beam). 
+% 
+% The damping loop is found uses the particle swarm optimziation algorithm
+% on the damping filter parameters, which include the poles, zeros, and
+% the unity gain frequency. For the cost function it considers the damping sensor noise injected
+% inot the optical cavity, the amount the modes are damped, and how stable
+% the loop is.
 
 % clear
 % clc
 % close all
 
 debug = 0;
-set_logspace = 1;
+set_logspace = 1; % 1 means the code searches the parameters in log space, e.g. searched_parameter_value = log10(actual_parameter_value)
+                  % 0 means the code searches the parameters in linear space
 
-% what's the meaning of this parameter???
-quadratic_linear_crossover_cost = 1000;
-linear_crossover_factor = sqrt(quadratic_linear_crossover_cost);
+% cost function shape: the cost function switches from a quadratic shape for small cost values to a linear shape for larger cost values, to keep it from blowing up 
+quadratic_linear_crossover_cost = 1000; % this is the cost value where the function switches from quadratic to linear
+linear_crossover_factor = sqrt(quadratic_linear_crossover_cost); % sqrt is taken here, so it doesn't need to be done at every single evalution of the cost function
 
+% number of particles in swarm
 Nswarms = 30; % 10000
 
 % setting the bounds for the variables to be searched over
-fmin    = 2*pi*2e-3;
-fmax    = 2*pi*300;
-Qmin = 1e-2;
-Qmax = 1e2;
+fmin    = 2*pi*2e-3; % minumum frequency bound for damping filter poles and zeros
+fmax    = 2*pi*300;  % maximum frequency bound for damping filter poles and zeros
+Qmin = 1e-2; % minimum Quality factor bound value for complex ploes and zeros in the damping filter
+Qmax = 1e2;  % maximum Quality factor bound value for complex ploes and zeros in the damping filter
 % gain_bounds = [1e-10 1e10];
-ugf_bounds = 2*pi*[1 9];
-if set_logspace
+ugf_bounds = 2*pi*[3 9];
+
+if set_logspace % if the parameter search is to be done in logspace
     fmin = log10(fmin);
     fmax = log10(fmax);
     Qmin = log10(Qmin);
@@ -32,17 +40,20 @@ if set_logspace
     ugf_bounds = log10(ugf_bounds);
 end
 
-% set initial poles & zeros
-estimated_run_time = 2.4*Nswarms;
+% estimated run time of code
+estimated_run_time = 20*Nswarms;
 disp(['Estimated run time = ',...
       num2str(estimated_run_time),...
       ' sec = ' num2str(estimated_run_time/60),' min = ',...
        num2str(estimated_run_time/3600),' hrs'])
+   
+% set initial damping filter poles & zeros for the first particle in the swarm
 polesz_real = 2*pi*[20 20 100];
 zerosz_real = 2*pi*[3e-3 250];
 polesz_complex = 2*pi*[1 2 2 8 20 1]; % frequency, Q, etc
 zerosz_complex = 2*pi*[1 5 2 3 10 1]; % frequency, Q, etc
 
+% list of parameters
 Longz = [polesz_real zerosz_real polesz_complex zerosz_complex];
     plant_params.numbers.real_poles = length(polesz_real);
     plant_params.numbers.real_zeros = length(zerosz_real);
@@ -52,11 +63,14 @@ pz = [Longz];
 % pz = [pz 1];  % last element is the initial guess for overall gain
 pz = [pz 2*pi*3.4];  % last element is the initial guess ugf in rad/s
 pzz = [pz];
+
+% randomize the initial starting positions of the other particles in the swarm
 for k = 2:Nswarms
 %     pzz = [pzz; pz.*(0.5 + rand(size(pz)))];
     pzz = [pzz; pz.*(0.75 + 0.5*rand(size(pz)))];
 end
 
+% propogate the parameter bounds to all parameters in the list
 LB=[]; UB=[];
 for k = 1:(plant_params.numbers.real_poles+plant_params.numbers.real_zeros)
     LB = [LB fmin];
@@ -67,7 +81,7 @@ for k=1:0.5*(plant_params.numbers.complex_poles+plant_params.numbers.complex_zer
     UB = [UB fmax]; UB = [UB Qmax];   % Upper bounds for the swarm values
 end
 
-if set_logspace
+if set_logspace % if the parameter search was chosen to be logspace
     pzz = log10(pzz);
 end
 % LB    = [LB gain_bounds(1)];  % add gain bounds
@@ -75,9 +89,9 @@ end
 LB    = [LB ugf_bounds(1)];  % add ugf bounds
 UB    = [UB  ugf_bounds(2)];
 
-nvars = length(UB);
+nvars = length(UB); % number of variables
 
-% check initial positions are not out of bounds
+% check initial positions are not out of bounds, if so adjust them to be in bounds
 for kk = 2:Nswarms
     for ii = 1:nvars
         
