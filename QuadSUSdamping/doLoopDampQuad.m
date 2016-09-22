@@ -24,7 +24,7 @@ linear_crossover_factor = sqrt(quadratic_linear_crossover_cost); % sqrt is taken
 plant_params.linear_crossover_factor = linear_crossover_factor;
 
 % number of particles in swarm
-Nswarms = 30; % 10000
+Nswarms = 5; % 10000
 
 % setting the bounds for the variables to be searched over
 fmin    = 2*pi*2e-3; % minumum frequency bound for damping filter poles and zeros
@@ -43,8 +43,8 @@ if set_logspace % if the parameter search is to be done in logspace
     ugf_bounds = log10(ugf_bounds);
 end
 
-% estimated run time of code
-estimated_run_time = 20*Nswarms;
+% estimated run time of code on 2012 MacBook Pro, 2.3 GHz Intel Core i7, 8 GB RAM, running Matlab R2015b
+estimated_run_time = 25*Nswarms;
 disp(['Estimated run time = ',...
       num2str(estimated_run_time),...
       ' sec = ' num2str(estimated_run_time/60),' min = ',...
