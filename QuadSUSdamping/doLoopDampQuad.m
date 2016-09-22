@@ -12,6 +12,8 @@
 % clc
 % close all
 
+%% Initializations
+
 debug = 0;
 set_logspace = 1; % 1 means the code searches the parameters in log space, e.g. searched_parameter_value = log10(actual_parameter_value)
                   % 0 means the code searches the parameters in linear space
@@ -19,6 +21,7 @@ set_logspace = 1; % 1 means the code searches the parameters in log space, e.g. 
 % cost function shape: the cost function switches from a quadratic shape for small cost values to a linear shape for larger cost values, to keep it from blowing up 
 quadratic_linear_crossover_cost = 1000; % this is the cost value where the function switches from quadratic to linear
 linear_crossover_factor = sqrt(quadratic_linear_crossover_cost); % sqrt is taken here, so it doesn't need to be done at every single evalution of the cost function
+plant_params.linear_crossover_factor = linear_crossover_factor;
 
 % number of particles in swarm
 Nswarms = 30; % 10000
@@ -48,10 +51,10 @@ disp(['Estimated run time = ',...
        num2str(estimated_run_time/3600),' hrs'])
    
 % set initial damping filter poles & zeros for the first particle in the swarm
-polesz_real = 2*pi*[20 20 100];
-zerosz_real = 2*pi*[3e-3 250];
-polesz_complex = 2*pi*[1 2 2 8 20 1]; % frequency, Q, etc
-zerosz_complex = 2*pi*[1 5 2 3 10 1]; % frequency, Q, etc
+polesz_real = 2*pi*[20 20 100]; % frequency [rad/s]
+zerosz_real = 2*pi*[3e-3 250];  % frequency [rad/s]
+polesz_complex = 2*pi*[1 2 2 8 20 1]; % frequency [rad/s], Q, etc
+zerosz_complex = 2*pi*[1 5 2 3 10 1]; % frequency [rad/s], Q, etc
 
 % list of parameters
 Longz = [polesz_real zerosz_real polesz_complex zerosz_complex];
@@ -72,11 +75,11 @@ end
 
 % propogate the parameter bounds to all parameters in the list
 LB=[]; UB=[];
-for k = 1:(plant_params.numbers.real_poles+plant_params.numbers.real_zeros)
+for k = 1:(plant_params.numbers.real_poles+plant_params.numbers.real_zeros) % bounds for real poles and zeros
     LB = [LB fmin];
     UB = [UB fmax];
 end
-for k=1:0.5*(plant_params.numbers.complex_poles+plant_params.numbers.complex_zeros)
+for k=1:0.5*(plant_params.numbers.complex_poles+plant_params.numbers.complex_zeros)  % bounds for complex poles and zeros
     LB = [LB fmin]; LB = [LB Qmin];   % Lower and
     UB = [UB fmax]; UB = [UB Qmax];   % Upper bounds for the swarm values
 end
@@ -84,8 +87,6 @@ end
 if set_logspace % if the parameter search was chosen to be logspace
     pzz = log10(pzz);
 end
-% LB    = [LB gain_bounds(1)];  % add gain bounds
-% UB    = [UB  gain_bounds(2)];
 LB    = [LB ugf_bounds(1)];  % add ugf bounds
 UB    = [UB  ugf_bounds(2)];
 
@@ -104,7 +105,7 @@ for kk = 2:Nswarms
     end  
 end
 
-%%
+% Frequency vector
 ff = logspace(-1, 2, 633);
 minf = min(ff); maxf = max(ff);
 plant_params.ff = ff;
@@ -112,13 +113,22 @@ ww = 2*pi*ff;
 plant_params.ww = ww;
 
 plant_params.debug = debug;
-%% Parameters, transfer functions of components
 
-% meters / Newton
-load simple_long_quadmodel
+
+%% Load the quad pendulum model and sensor noise
+
+% Load the quad pendulum model. Has units of meters / Newton
+load simple_long_quadmodel % loads quad pendulum model as a state space variable called simple_long_quadmodel. For simplicity, the model only includes 1 degree of freedom (DOF) per stage, the DOF parallel to the laser beam
+
+% OSEM (the sensors used in the damping) sensor noise
+plant_params.OSEMnoise = 1e-10 / sqrt(2); % BOSEM noise above 10 Hz (m/rHz)
 
 % quad model number of ins and outs
 [quad_output_num,quad_input_num] = size(simple_long_quadmodel);
+
+% Input and output indices of the quad model. The field L, refers to the
+% 'Longitudinal or Length' DOF, which is the DOF parallel to the laser
+% beam. All other DOFs are not included in this model.
 out.top.disp.L = 1;
 out.uim.disp.L = 2;
 out.pum.disp.L = 3;
@@ -129,42 +139,28 @@ in.uim.drive.L = 3;
 in.pum.drive.L = 4;
 in.tst.drive.L = 5;
 
-% quad TFs
+% pull out the top to top TF (this should speed things up later)
 TopL2TopL  = simple_long_quadmodel(out.top.disp.L,in.top.drive.L);
-% TopL2TopL  = etmSUS.ss(etmSUS.out.top.disp.L,...
-%                          etmSUS.in.top.drive.L);
-% TopL2TestL  = etmSUS.ss(etmSUS.out.tst.disp.L,...
-%                          etmSUS.in.top.drive.L);
+plant_params.plant = TopL2TopL; 
 
 % quad technical noise requirement = 1/10 of longitudinal suspension thermal noise: T010007-v5.
-sus_tech_noise_freq = linspace(10,20,20); % 10 to 20 Hz
-sus_tech_noise_req = (1e-20)*(10^2)./(sus_tech_noise_freq.^2);
-% sus_tech_noise_logreq = linspace(-20,log10((1e-20)*(10^2)/(20^2)),10);
-% sus_tech_noise_req = 10.^sus_tech_noise_logreq;
+sus_tech_noise_freq = linspace(10,20,20); % 10 to 20 Hz, the frequencies over which we will test the noise performance of the damping loop
+sus_tech_noise_req = (1e-20)*(10^2)./(sus_tech_noise_freq.^2); % the magnitude of the noise performance requirement of the frequency band above.
+plant_params.Noise_req_freq = (sus_tech_noise_freq); % frequency data for the noise requirement
+plant_params.Noise_req_df = sus_tech_noise_freq(2) - sus_tech_noise_freq(1); % differential frequency, needed to integrate over the noise over the frequency band
+plant_params.Noise_req_asd = transpose(sus_tech_noise_req); % ASD data for the noise requirement
 
                     
 % plant parameters needed for the cost function calculation
 plant_params.act.longitdinal = 1; % damping actuator gain
 plant_params.undamped_ss = simple_long_quadmodel; % full state space system
-plant_params.undamped_input_num = quad_input_num;
-plant_params.undamped_output_num = quad_output_num;
+plant_params.undamped_input_num = quad_input_num; % number of quad pendulum inputs
+plant_params.undamped_output_num = quad_output_num;  % number of quad pendulum outputs
 plant_params.undamped_out = out; % output indices
 plant_params.undamped_in = in; % input indices
 
-% pull out the top to top TF (this should speed things up)
-plant_params.plant = (TopL2TopL); 
 
-plant_params.Noise_req_freq = (sus_tech_noise_freq); % frequency data for the noise requirement
-
-% differential frequency, needed to integrate over the noise over the frequency band
-plant_params.Noise_req_df = sus_tech_noise_freq(2) - sus_tech_noise_freq(1); 
-
-% frequancy bandwidth fro noise estimate
-% plant_params.Noise_req_Delta_Freq = plant_params.Noise_req_freq(end) - plant_params.Noise_req_freq(1);
-
-plant_params.Noise_req_asd = transpose(sus_tech_noise_req); % ASD data for the noise requirement
-plant_params.OSEMnoise = 1e-10 / sqrt(2); % BOSEM noise above 10 Hz (m/rHz)
-plant_params.linear_crossover_factor = linear_crossover_factor;
+%% Particle SWarm Optimization
 
 % set particle swarm optimization options
 hybridopts = optimoptions('fmincon',...
@@ -197,8 +193,8 @@ else
 end
 
 % make the closed loop plant
-Hlong = make_filter_from_params_DampQuad(xout, plant_params, debug, set_logspace);
-[damped_quad_model,Hlong_input_index] = make_closed_loop_DampQuad(plant_params, Hlong);
+Hlong = make_filter_from_params_DampQuad(xout, plant_params, debug, set_logspace); % damping filter
+[damped_quad_model,Hlong_input_index] = make_closed_loop_DampQuad(plant_params, Hlong); % closed loop system
 
 % save these temporary results: this allows running on a remote, Dropbox
 % synced machine and then using the code block below to make the plots
