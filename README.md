@@ -25,6 +25,7 @@ A few examples of control system challenges in the LIGO project
 5. Avoid saturating the actuators
 
 ### Background on the Quadruple Pendulum Suspension
+![Alt](/quad_sketch.jpg "LIGO Suspension")
 The LIGO test mass optics are supported by a suspension system, or assembly, which provides passive isolation (from motion of the seismically isolated optics tables) in all degrees of freedom. The test mass suspensions are quadruple, ie. they have four suspended masses. The assembly is depicted in the quad_sketch.jpg. Each of the test mass suspensions is comprised of two adjacent chains, each chain having four masses suspended from one another. The main chain includes the test mass optic as the lowest mass. The adjacent, reaction chain provides an isolated set of masses for force reaction. The bottom mass in the reaction chain is the EndReaction Mass (ERM) (in the case of an ETM suspension). A structure surrounds and cages the suspended masses and mounts to the seismically isolated optics table. 
 
 Vibration isolation for the test mass is accomplished with a 4-stage pendulum and 3 stages of cantilevered blade springs, providing isolation in all 6 degrees-of-freedom above approximately 1 Hz. The suspension is designed to couple 22 of the 24 quasi-rigid body modes (all but the 2 highest frequency) of each isolation chain so that they are observable and controllable at the top mass (4 wires between masses to couple pitch and roll modes; non-vertical wires to couple pendulum modes).
