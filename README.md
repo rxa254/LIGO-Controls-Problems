@@ -4,9 +4,11 @@ A few examples of control system challenges in the LIGO project
 
 ### Local damping of quadruple suspension using shadow sensors on the TOP stage
 
-1. Minimize RMS velocity or displacement of single mirror
-2. Filter sensor noise so the resulting contribution to test mass motion is < 1e-19 m/rHz @ 10 Hz along the longitudinal DOF
-3. Avoid saturating the actuators.
+1. Minimize RMS velocity or displacement of the test mass (mirror). The RMS of test mass longitudinal motion (x), and lateral motion (y) divided by 1000, and vertical motion (z) divided by 1000, must be < 10^-19 m/rHz at 10 Hz, falling faster than 1/f^4 (except for bounce mode peak at ~12 Hz). Pitch (rotation about y) noise, and Yaw (rotation about z) noise, must each be < 10^-17 rad/rHz at 10 Hz, falling faster than 1/f^2. Roll motion should be damped, but specific limit is required.
+
+2. Filter sensor noise so the resulting contribution to test mass motion satisfies the criteria given above.
+
+3. Avoid saturating the actuators. (MORE DEFINITION NEEDED HERE)
 
 ### Angular control of a Fabry-Perot cavity with a quad suspension on each end
 1. Need to have enough gain below 3 Hz
