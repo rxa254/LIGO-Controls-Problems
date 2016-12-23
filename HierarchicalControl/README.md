@@ -23,3 +23,13 @@ the interferometer calibration remains stable.
 4. Minimize relative motion of interferometric DoFs
 5. Avoid saturating the actuators. Less than 1 saturation per hour.
 6. DARM RMS must < 1e-14 m RMS in the 0-100 Hz band.
+
+----
+
+Brett add graphic of hierarchical / parallel controls.
+
+Rana add example files showing Bode plot of an example set of loops and the resulting cost.
+
+Give intuitive description of the terms in the cost function.
+
+Possibility of a nonlinear controller ?
