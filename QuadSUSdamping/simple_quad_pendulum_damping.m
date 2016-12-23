@@ -28,7 +28,7 @@ bodeopts.XLabel.FontSize = 25;
 bodeopts.TickLabel.FontSize = 25;
 bodeopts.XLim = {[freq(1) freq(end)]};
 
-%% Load the quad pendulum model noise sources
+%% Load the quad pendulum
 
 % Load the quad pendulum model. Has units of meters / Newton
 load simple_long_quadmodel % loads quad pendulum model as a state space variable called simple_long_quadmodel. For simplicity, the model only includes 1 degree of freedom (DOF) per stage, the DOF parallel to the laser beam
@@ -60,6 +60,8 @@ plant_params.undamped_input_num = quad_input_num; % number of quad pendulum inpu
 plant_params.undamped_output_num = quad_output_num;  % number of quad pendulum outputs
 plant_params.undamped_out = out; % output indices
 plant_params.undamped_in = in; % input indices
+
+%% load model noise sources
 
 % OSEM (the sensors used in the damping) sensor noise
 OSEMnoise_rawasd = [sqrt(10/freq(1)) 1 1] * (1e-10 / sqrt(2)); % basic model of OSEM noise spectrum [m/rHz]
