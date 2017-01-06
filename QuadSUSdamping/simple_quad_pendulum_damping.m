@@ -22,16 +22,19 @@ bodeopts.Grid = 'On';
 bodeopts.FreqUnits = 'Hz';
 bodeopts.MagUnits = 'abs';
 bodeopts.MagScale = 'log';
-bodeopts.Title.FontSize = 25;
-bodeopts.YLabel.FontSize = 25;
-bodeopts.XLabel.FontSize = 25;
-bodeopts.TickLabel.FontSize = 25;
+bodeopts.PhaseWrapping = 'on';
+bodeopts.Title.FontSize = 18;
+bodeopts.YLabel.FontSize = 18;
+bodeopts.XLabel.FontSize = 18;
+bodeopts.TickLabel.FontSize = 16;
 bodeopts.XLim = {[freq(1) freq(end)]};
 
 %% Load the quad pendulum
 
 % Load the quad pendulum model. Has units of meters / Newton
-load simple_long_quadmodel % loads quad pendulum model as a state space variable called simple_long_quadmodel. For simplicity, the model only includes 1 degree of freedom (DOF) per stage, the DOF parallel to the laser beam
+% loads quad pendulum model as a state space variable called simple_long_quadmodel. 
+% For simplicity, the model only includes 1 degree of freedom (DOF) per stage (the DOF parallel to the laser beam)
+load simple_long_quadmodel
 
 % Input and output indices of the quad model. These are valid for both the
 % undamped and damped cases. The field L, refers to the
@@ -107,31 +110,38 @@ test_mass.undamped = abs(squeeze(freqresp(undamped_seismic_to_test_mass_TF,2*pi*
 %% Make some plots
 
 % noise inputs
-figure,loglog(freq,seismicnoise,freq,OSEMnoise,'LineWidth',3)
-set(gca,'FontSize',25)
+figure(201)
+loglog(freq,seismicnoise,freq,OSEMnoise,'LineWidth',3)
+%set(gca,'FontSize',25)
 xlabel('Frequency (Hz)')
 ylabel('Amplitude (m/\surdHz)')
 title('Suspension noise inputs along the longitudinal DOF (parallel to cavity axis)'),grid on
 legend('Suspension point motion','Top mass damping sensor noise')
 
 % test mass displacement
-figure,loglog(freq,test_mass.undamped,'k',...
+figure(202)
+loglog(freq,test_mass.undamped,'k',...
               freq,test_mass.seismicnoise_contribution,...
               freq,test_mass.sensornoise_contribution,...
               freq,test_mass.total_displacement,...
               'LineWidth',3)
-set(gca,'FontSize',25)
+%set(gca,'FontSize',25)
 xlabel('Frequency (Hz)')
 ylabel('Amplitude (m/\surdHz)')
-title('Test mass displacement along the cavity axis'),grid on
-legend('Undamped','damped seismic contribution','damped sensor noise contribution','total damped')
+title('Test mass displacement along the cavity axis')
+grid on
+ylim([1e-21 1e-5])
+legend('Undamped','damped seismic contribution',...
+       'damped sensor noise contribution',...
+       'total damped')
 
 % Impulse response
-figure
-impulse(damped_seismic_to_test_mass_TF,0:0.001:100),grid on
+figure(203)
+impulse(damped_seismic_to_test_mass_TF, 0:0.001:100)
+grid on
 title('Impulse response from suspension point displacement to the test mass displacement')
 
 % Loop gain transfer function
-figure
-bodeplot(damping_loop_gain,bodeopts)
+figure(204)
+bodeplot(damping_loop_gain, bodeopts)
 title('Damping loop gain transfer function')
