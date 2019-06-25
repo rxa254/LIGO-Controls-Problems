@@ -1,4 +1,5 @@
-function [damped_quad_model,damping_filter_input_index,damping_filter_output_index] = make_closed_loop_DampQuad(plant_params, damping_filter)
+function [damped_quad_model,damping_filter_input_index,damping_filter_output_index] =...
+    make_closed_loop_DampQuad(plant_params, damping_filter)
 
 % append the quad model and the damping loop into a single state space system 
 % (note, each part is still independent after the append command)
@@ -12,18 +13,20 @@ damping_filter_output_index = plant_params.undamped_output_num + 1;
 
 % this matrix defines which inputs and outputs are connected to close the dmaping loop
 connection_matrix = [
-
 % input indices              <-         % output indices     
-plant_params.undamped_in.top.drive.L    damping_filter_output_index          % controller force to top mass drive
+% controller force to top mass drive
+plant_params.undamped_in.top.drive.L    damping_filter_output_index
 
-damping_filter_input_index             -plant_params.undamped_out.top.disp.L % top mass displacement to controller input
-
+% top mass displacement to controller input
+damping_filter_input_index             -plant_params.undamped_out.top.disp.L
 ];
 
-% list of all the  input indices from the appended state space that we want access to in the closed loop state space
+% list of all the  input indices from the appended state space that 
+% we want access to in the closed loop state space
 inputs  = 1:damping_filter_input_index;
 
-% list of all the output indices from the appended state space that we want access to in the closed loop state space
+% list of all the output indices from the appended state space that 
+% we want access to in the closed loop state space
 outputs = 1:damping_filter_output_index;
 
 % damped model
