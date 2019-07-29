@@ -37,7 +37,12 @@ A few examples of control system challenges in the LIGO project, so that clever 
 
 <a name="opt_TF"></a>
 ## Optimal Identification of Linear, Time-Invariant Systems
-1. 
+1. It takes us too long to make transfer function measurements.
+1. > 98% of our measurements are LTI, so no need for thinking of time-dependent, nonlinear systems.
+1. > 90% of our systems can be considered SISO for basic design purposes.
+1. For the ones where MIMO is necessary, we can always considered a reduced order MIMO system rather than the full state space with all possible off-diagonal elements.
+1. [Description in LIGO Control Systems Wiki](https://wiki.ligo.org/CSWG/OptTF)
+1. [README in OptimalSysID dir](OptimalSysID/README.rst)
 
 
 ------
