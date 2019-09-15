@@ -13,8 +13,8 @@
 %% Initializations
 
 % frequency vector over which the plots are made
-freq = logspace(-2,2,1e5);
-
+freq = logspace(-2, 2, 1e4);
+fons = 16;
 
 % bode plot options
 bodeopts = bodeoptions;
@@ -67,15 +67,29 @@ plant_params.undamped_in = in; % input indices
 %% load model noise sources
 
 % OSEM (the sensors used in the damping) sensor noise
-OSEMnoise_rawasd = [sqrt(10/freq(1)) 1 1] * (1e-10 / sqrt(2)); % basic model of OSEM noise spectrum [m/rHz]
-OSEMnoise_rawfreq = [freq(1) 10 10000]; % frequency vector for the basic OSEM noise model [Hz]
-OSEMnoise = transpose( 10.^interp1(log10(OSEMnoise_rawfreq),log10(OSEMnoise_rawasd),log10(freq)) ); % interpolate the basic OSEM noise model over the chosen frequency vector. This interpolation works best in logspace.
+
+% basic model of OSEM noise spectrum [m/rHz]
+OSEMnoise_rawasd = [sqrt(10/freq(1)) 1 1] * (1e-10 / sqrt(2));
+
+% frequency vector for the basic OSEM noise model [Hz]
+OSEMnoise_rawfreq = [freq(1) 10 10000]; 
+
+% interpolate the basic OSEM noise model over the chosen frequency vector. 
+% This interpolation works best in logspace.
+OSEMnoise = 10.^interp1(log10(OSEMnoise_rawfreq),...
+                                  log10(OSEMnoise_rawasd), log10(freq));
+OSEMnoise = transpose(OSEMnoise);
 % figure,loglog(freq,OSEMnoise),xlabel('Frequency (Hz)'),ylabel('Amplitude (m/\surdHz)'),title('OSEM noise model for the longitudinal DOF'),grid on
 
 % Seismic noise
 load suspoint_L % loads a data struct called suspoint_L. The units are m/sqrt(Hz)
-% The seismic data in suspoint_L was posted to the DCC at T1500318, and is from the GS13s of LHO ETMX during ER7. 
-% The controls configuration according to T1500318 is "Aggressive level 3 isolation filters, LLO 90mhz blends on St1 X and Z, 45mhz blend on Y, 250mhz blends on RX/RY, 750mhz blend on RZ, St2 250mhz lowpassed blends on X,Y,Z,RZ, rdr .43hz notch sensor correction on St1 X&Y, Mittelman broadband sensor correction on HEPI Z and VL FF on X,Y&Z."
+% The seismic data in suspoint_L was posted to the DCC at T1500318, and 
+% is from the GS13s of LHO ETMX during ER7. 
+% The controls configuration according to T1500318 is 
+% "Aggressive level 3 isolation filters, LLO 90mhz blends on St1 X and Z, 
+% 45mhz blend on Y, 250mhz blends on RX/RY, 750mhz blend on RZ, 
+% St2 250mhz lowpassed blends on X,Y,Z,RZ, rdr .43hz notch sensor correction on St1 X&Y, 
+% Mittelman broadband sensor correction on HEPI Z and VL FF on X,Y&Z."
 seismicnoise = transpose( interp1(suspoint_L.freq,suspoint_L.asd,freq) );
 
 
@@ -86,7 +100,8 @@ damping_filter = zpk(-2*pi*0,-2*pi*20*[1;1],1e6);
 
 damping_loop_gain = damping_filter*TopL2TopL; % loop gain TF
 
-[damped_quad_model,damping_filter_input_index,damping_filter_output_index] = make_closed_loop_DampQuad(plant_params,damping_filter);
+[damped_quad_model,damping_filter_input_index,damping_filter_output_index] =...
+    make_closed_loop_DampQuad(plant_params,damping_filter);
 
 %% Calculate the total test mass displacement
 
@@ -102,21 +117,30 @@ undamped_seismic_to_test_mass_TF = simple_long_quadmodel(out.tst.disp.L,in.gnd.d
 % test mass displacement contributions
 test_mass.seismicnoise_contribution = abs(squeeze(freqresp(damped_seismic_to_test_mass_TF,2*pi*freq))) .* seismicnoise;
 test_mass.sensornoise_contribution = abs(squeeze(freqresp(damped_sensor_to_test_mass_TF,2*pi*freq))) .* OSEMnoise;
-test_mass.total_displacement = sqrt(test_mass.seismicnoise_contribution.^2 + test_mass.sensornoise_contribution.^2); % total is the incoherent sum of all noise contributions
+
+% total is the incoherent sum of all noise contributions
+test_mass.total_displacement = sqrt(test_mass.seismicnoise_contribution.^2 +...
+                                    test_mass.sensornoise_contribution.^2);
 
 % For reference, the undamped test mass displacement
-test_mass.undamped = abs(squeeze(freqresp(undamped_seismic_to_test_mass_TF,2*pi*freq))) .* seismicnoise;
+test_mass.undamped = abs(squeeze(freqresp(undamped_seismic_to_test_mass_TF,2*pi*freq))) .*...
+                     seismicnoise;
 
 %% Make some plots
 
 % noise inputs
 figure(201)
-loglog(freq,seismicnoise,freq,OSEMnoise,'LineWidth',3)
+loglog(freq, seismicnoise,...
+       freq, OSEMnoise,...
+       'LineWidth',3)
 %set(gca,'FontSize',25)
 xlabel('Frequency (Hz)')
 ylabel('Amplitude (m/\surdHz)')
-title('Suspension noise inputs along the longitudinal DOF (parallel to cavity axis)'),grid on
-legend('Suspension point motion','Top mass damping sensor noise')
+title('Suspension noise inputs along the longitudinal DOF')
+grid on
+set(gca,'FontSize', fons)
+legend('Suspension point motion',...
+       'Top mass damping sensor noise')
 
 % test mass displacement
 figure(202)
@@ -125,7 +149,7 @@ loglog(freq,test_mass.undamped,'k',...
               freq,test_mass.sensornoise_contribution,...
               freq,test_mass.total_displacement,...
               'LineWidth',3)
-%set(gca,'FontSize',25)
+set(gca,'FontSize', fons)
 xlabel('Frequency (Hz)')
 ylabel('Amplitude (m/\surdHz)')
 title('Test mass displacement along the cavity axis')
@@ -137,11 +161,19 @@ legend('Undamped','damped seismic contribution',...
 
 % Impulse response
 figure(203)
-impulse(damped_seismic_to_test_mass_TF, 0:0.001:100)
+[yy,tt] = impulse(damped_seismic_to_test_mass_TF, linspace(0, 100, 1000));
+plot(tt, yy, 'LineWidth', 3)
+set(gca,'FontSize', fons)
+xlabel('Time [s]')
+ylabel('Response')
 grid on
 title('Impulse response from suspension point displacement to the test mass displacement')
 
 % Loop gain transfer function
 figure(204)
-bodeplot(damping_loop_gain, bodeopts)
+h = bodeplot(damping_loop_gain, bodeopts);
+set(gca,'FontSize', fons)
+%set(h, 'LineWidth', 2)
 title('Damping loop gain transfer function')
+
+
