@@ -27,6 +27,7 @@ def plot_psd(timeseries, T_fft, fs, ylabel='Spectrum [Hz$^{-1/2}$]', filename='S
     window = signal.kaiser(n_fft, beta=35)  # note that beta>35 does not give you more sidelobe suppression
     ff, psd = signal.welch(timeseries, fs=fs, window=window, nperseg=n_fft, noverlap=n_fft//2)
 
+    plt.figure()
     plt.loglog(ff, np.sqrt(psd))
     plt.xlim(0.1, 100)
     plt.xlabel('Frequency [Hz]')
@@ -40,16 +41,16 @@ def plot_bode(sys_ss, filename='./plots/bode_plot.png'):
     ff = np.logspace(-1, 2, 500)
     mag, phase, w = control.bode(sys_ss, 2*np.pi*ff)
 
-    fi = np.logical_and(ff > 0.1, ff < 100)
     plt.figure()
     plt.subplot(2, 1, 1)
-    plt.semilogx(ff[fi], 20*np.log10(mag[fi]))  # Bode magnitude plot
+    plt.semilogx(ff, 20*np.log10(mag))  # Bode magnitude plot
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('Transfer function, mag [dB]')
     plt.xlim(0.1, 100)
     plt.grid(True)
     plt.subplot(2, 1, 2)
-    plt.semilogx(ff[fi], phase[fi]*180./np.pi)  # Bode phase plot
+    plt.semilogx(ff, phase*180./np.pi)  # Bode phase plot
+    plt.plot(ff,-180*np.ones(len(ff)), color='red', linestyle='dashed')
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('Transfer function, phase [deg]')
     plt.xlim(0.1, 100)
@@ -152,10 +153,11 @@ class Plant:
             self.ns.append({'name': name, 'ff': ff, 'rPSD': rpsd, 'unit': units[k]})
 
             if plotit:
+                plt.figure()
                 plt.loglog(ff, rpsd)
                 plt.xlim(0.1, 100)
                 plt.xlabel('Frequency [Hz]')
-                plt.ylabel('Model spectrum, {0} [{1}]'.format(name,units[k]+'/$\sqrt{\\rm Hz}$'))
+                plt.ylabel('Model spectrum, {0} [{1}]'.format(name, units[k]+'/$\sqrt{\\rm Hz}$'))
                 plt.grid(True)
                 plt.tight_layout()
                 plt.savefig('./plots/' + name + '.png', dpi=300)
@@ -177,6 +179,7 @@ class Plant:
             self.tfs.append({'name': name, 'ff': ff, 'tf': tf, 'unit': units[k]})
 
             if plotit:
+                plt.figure()
                 plt.loglog(ff, np.abs(tf))
                 plt.xlim(0.1, 100)
                 plt.xlabel('Frequency [Hz]')
@@ -364,7 +367,7 @@ class Controller:
         return output[1]
 
     def get_last_controller_input(self):
-        return self.last_controller_input[0]
+        return self.last_controller_input
 
     def get_feedback_filter_sys(self):
         return self.feedback_sys
@@ -375,39 +378,49 @@ def open_loop_run(asc_plant, asc_controller, data):
     N = data['duration_batch']*data['sampling_frequency']
 
     tstP_t = np.zeros((N,))
+    readout_t = np.zeros((N,))
     control_t = np.zeros((N,))
     for k in range(N-1):
-        tstP_t[k+1] = asc_plant.sample_tstP(control_t[k])
-        control_t[k+1] = asc_controller.sample_feedback(tstP_t[k+1])
+        tstP_t[k+1] = asc_plant.sample_tstP()
+        control_t[k+1] = asc_controller.sample_feedback(input_signal=tstP_t[k+1])
+        readout_t[k+1] = asc_controller.get_last_controller_input()
         if tstP_t[k+1]>1:
             print('Diverging time series:', tstP_t[k+1])
             sys.exit(0)
+        if np.mod(k, np.round(N/10)) == 0:
+            print(np.round(100.*k/N), '% done of open-loop simulation')
 
     plot_psd(tstP_t, data['duration_fft'], data['sampling_frequency'],
              ylabel='TST P [rad/$\sqrt{\\rm Hz}$]', filename='./plots/tstP_open_loop.png')
     plot_psd(control_t, data['duration_fft'], data['sampling_frequency'],
-             ylabel='Control output [rad/$\sqrt{\\rm Hz}$]', filename='./plots/control_output_open_loop.png')
+             ylabel='Control output [Nm/$\sqrt{\\rm Hz}$]', filename='./plots/control_output_open_loop.png')
+    plot_psd(readout_t, data['duration_fft'], data['sampling_frequency'],
+             ylabel='Control input [rad/$\sqrt{\\rm Hz}$]', filename='./plots/control_input_open_loop.png')
 
 def closed_loop_run(asc_plant, asc_controller, data):
     asc_plant.reset_counters()
 
     N = data['duration_batch']*data['sampling_frequency']
 
-    readout_t = np.zeros((N,))
     tstP_t = np.zeros((N,))
+    readout_t = np.zeros((N,))
+    control_t = np.zeros((N,))
     for k in range(N-1):
-        control_output = asc_controller.sample_feedback(tstP_t[k])
-        tstP_t[k+1] = asc_plant.sample_tstP(control_output)
+        tstP_t[k+1] = asc_plant.sample_tstP(pum_input_signal=-control_t[k])
+        control_t[k+1] = asc_controller.sample_feedback(input_signal=tstP_t[k+1])
         readout_t[k+1] = asc_controller.get_last_controller_input()
-        if readout_t[k+1]>1:
-            print('Diverging time series:',readout_t[k+1])
+        if tstP_t[k+1] > 1:
+            print('Diverging time series:', tstP_t[k+1])
             sys.exit(0)
-
-    plot_psd(readout_t, data['duration_fft'], data['sampling_frequency'],
-             ylabel='TST P readout, hard mode [rad/$\sqrt{\\rm Hz}$]', filename='./plots/tstP_readout_closed_loop.png')
+        if np.mod(k, np.round(N/10)) == 0:
+            print(np.round(100. * k / N), '% done of closed-loop simulation')
 
     plot_psd(tstP_t, data['duration_fft'], data['sampling_frequency'],
              ylabel='TST P [rad/$\sqrt{\\rm Hz}$]', filename='./plots/tstP_closed_loop.png')
+    plot_psd(control_t, data['duration_fft'], data['sampling_frequency'],
+             ylabel='Control output [Nm/$\sqrt{\\rm Hz}$]', filename='./plots/control_output_closed_loop.png')
+    plot_psd(readout_t, data['duration_fft'], data['sampling_frequency'],
+             ylabel='Control input [rad/$\sqrt{\\rm Hz}$]', filename='./plots/control_input_closed_loop.png')
 
 
 """
@@ -422,25 +435,23 @@ def main(args):
     physics = {'P': float(args['P']), 'dydth_soft': float(args['dydth_soft']), 'dydth_hard': float(args['dydth_hard'])}
     controls = {'noise_hard_mode': float(args['n_hard'])}
 
-    asc_plant = Plant(physics, data, plotit=False)
-    asc_controller = Controller(controls, data, plotit=False)
+    asc_plant = Plant(physics, data, plotit=True)
+    asc_controller = Controller(controls, data, plotit=True)
 
     transfer_functions = False
-    sim_open_loop = True
+    sim_open_loop = False
     sim_closed_loop = False
 
     if transfer_functions:
+        # bode plots of state-space models
         open_loop_sys = control.series(asc_plant.get_pumP_2_tstP_SS_sys(), asc_controller.get_feedback_filter_sys())
         plot_bode(open_loop_sys, filename='./plots/bode_open_loop.png')
 
-        # measure transfer functions
+        # measure transfer functions (with white noise input)
         asc_plant.reset_counters()
         transfer_function(open_loop_sys, data['duration_batch'], data['sampling_frequency'],
                           filename='./plots/bode_open_loop_measured.png')
 
-        #asc_plant.reset_counters()
-        #transfer_function(asc_plant.get_tstP_2_tstP_SS_sys(), data['duration_batch'], data['sampling_frequency'],
-        #                  filename='./plots/bode_tstP_2_tstP_measured.png')
         transfer_function(asc_controller.get_feedback_filter_sys(), data['duration_batch'], data['sampling_frequency'],
                           filename='./plots/bode_feedback_measured.png')
 
@@ -473,4 +484,4 @@ if __name__ == '__main__':
 
     start_time = time.time()
     main(args)
-    print("--- %s seconds ---" % (time.time() - start_time))
+    print("--- %s seconds ---" % np.round(time.time() - start_time))
