@@ -30,11 +30,11 @@ def plot_psd(timeseries, T_fft, fs, ylabel='Spectrum [Hz$^{-1/2}$]', filename='S
     rms = np.sqrt(1./T_fft*np.sum(psd))
 
     plt.figure()
-    plt.loglog(ff, np.sqrt(psd))
+    plt.loglog(ff, np.sqrt(psd), label='rms = {:5.2e}'.format(rms))
     plt.xlim(0.1, 100)
     plt.xlabel('Frequency [Hz]')
     plt.ylabel(ylabel)
-    plt.legend('rms = {:5.2f}'.format(rms))
+    plt.legend()
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
@@ -72,9 +72,9 @@ def analyze_sys(sys_ss, filename='plot'):
 
     gm, pm, sm, wg, wp, ws = control.stability_margins(sys_ss)
     print('------', filename, '------')
-    print('Gain margin (', wg/(2*np.pi), 'Hz):', gm)
-    print('Phase margin (', wp/(2*np.pi), 'Hz):', pm)
-    print('Stability margin (', ws/(2*np.pi), 'Hz):', sm)
+    print('Gain margin ({:5.2f}'.format(wg/(2*np.pi)), 'Hz): {:5.2f}'.format(gm))
+    print('Phase margin ({:5.2f}'.format(wp/(2*np.pi)), 'Hz): {:5.2f}'.format(pm))
+    print('Stability margin ({:5.2f}'.format(ws/(2*np.pi)), 'Hz): {:5.2f}'.format(sm))
 
 def transfer_function(sys_ss, T, fs, T_fft=64, ylabel='Transfer function', filename='./plots/transfer_function.png'):
 
