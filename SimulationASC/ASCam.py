@@ -1,28 +1,26 @@
-import numpy as np
-import scipy.signal as signal
-import control
-import matplotlib.pyplot as plt
-
-import pandas as pd
-import argparse
-import pprint as pp
-import sys
-import time
-
-"""
-ASCam is an ASC time-domain simulation to test novel feedback-filter designs. 
+"""ASCam is an ASC time-domain simulator to test novel feedback-filter designs.
 
 Produced by Jan Harms
 
+Collaborators Rana Adhikari and Hang Yu from Caltech provided all the insight and data for the ASC modeling.
+
 version 1.0 (04/26/2020)
 ASCam implements pitch dynamics with noise inputs from ISI-L and TOP NL/NP from damping OSEMs. The dynamics
-include a power-dependent Sigg-Sidles torque feedback. ASCam simulates the test-mass pitch hard-mode readout. 
-In lack of a state-space model for the ISI/TOP input noises, they are produced by Fourier methods in fixed-size 
+include a power-dependent Sigg-Sidles torque feedback. ASCam simulates the test-mass pitch hard-mode readout.
+In lack of a state-space model for the ISI/TOP input noises, they are produced by Fourier methods in fixed-size
 batches.
-
 """
 
-def plot_psd(timeseries, T_fft, fs, ylabel='Spectrum [Hz$^{-1/2}$]', filename='Spectrum.png'):
+import os
+import sys
+
+import control
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy.signal as signal
+
+def plot_psd(timeseries, T_fft, fs, ylabel='Spectrum [Hz$^{-1/2}$]', filename=None):
     n_fft = T_fft*fs
     window = signal.kaiser(n_fft, beta=35)  # note that beta>35 does not give you more sidelobe suppression
     ff, psd = signal.welch(timeseries, fs=fs, window=window, nperseg=n_fft, noverlap=n_fft//2)
@@ -40,7 +38,36 @@ def plot_psd(timeseries, T_fft, fs, ylabel='Spectrum [Hz$^{-1/2}$]', filename='S
     plt.savefig(filename, dpi=300)
     plt.close()
 
-def bode_plot(sys_ss, filename='plot'):
+def plot_hoft(tstP, T_fft, fs, reference_data_file, filename=None):
+    n_fft = T_fft*fs
+
+    pitch2DARM = 0.001*2./4000
+
+    window = signal.kaiser(n_fft, beta=35)  # note that beta>35 does not give you more sidelobe suppression
+    ff_data, psd = signal.welch(tstP, fs=fs, window=window, nperseg=n_fft, noverlap=n_fft//2)
+    psd_h = psd * pitch2DARM ** 2
+
+    rms = np.sqrt(1. / T_fft * np.sum(psd))
+
+    dn = pd.read_csv(reference_data_file,
+                     names=['ff', 'susT', 'coatT', 'quantum', 'aplus'], delimiter=' ', skipinitialspace=True)
+    ff = np.array(dn[['ff']].values.flatten())
+    aplus = np.array(dn[['aplus']].values.flatten())
+
+    plt.figure()
+    plt.loglog(ff_data, np.sqrt(psd_h), label='rms = {:5.2e}'.format(rms))
+    plt.loglog(ff, aplus, label='AdV LIGO +')
+    plt.xlim(10, 1000)
+    plt.ylim(1e-24, 1e-19)
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Strain noise [Hz$^{-1/2}$]')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(filename, dpi=300)
+    plt.close()
+
+def bode_plot(sys_ss, filename=None):
     ff = np.logspace(-1, 2, 500)
     mag, phase, w = control.bode(sys_ss, 2*np.pi*ff)
 
@@ -58,16 +85,15 @@ def bode_plot(sys_ss, filename='plot'):
     plt.xlim(0.1, 100)
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig('./plots/bode_' + filename + '.png', dpi=300)
+    plt.savefig(filename, dpi=300)
     plt.close()
 
-def analyze_sys(sys_ss, filename='plot'):
+def analyze_sys(sys_ss, filename=None):
     plt.figure()
     control.pzmap(sys_ss, Plot=True, grid=True, title='Pole Zero Map')
-    plt.xlim(-5,5)
+    plt.xlim(-5, 5)
     plt.ylim(-5, 5)
-    plt.tight_layout()
-    plt.savefig('./plots/pzmap_' + filename + '.png', dpi=300)
+    plt.savefig(filename, dpi=300)
     plt.close()
 
     gm, pm, sm, wg, wp, ws = control.stability_margins(sys_ss)
@@ -76,7 +102,7 @@ def analyze_sys(sys_ss, filename='plot'):
     print('Phase margin ({:5.2f}'.format(wp/(2*np.pi)), 'Hz): {:5.2f}'.format(pm))
     print('Stability margin ({:5.2f}'.format(ws/(2*np.pi)), 'Hz): {:5.2f}'.format(sm))
 
-def transfer_function(sys_ss, T, fs, T_fft=64, ylabel='Transfer function', filename='./plots/transfer_function.png'):
+def transfer_function(sys_ss, T, fs, T_fft=64, ylabel='Transfer function', filename=None):
 
     # Fourier amplitudes of white noise
     re = np.random.normal(0, 1, T*fs//2+1)
@@ -118,17 +144,17 @@ def transfer_function(sys_ss, T, fs, T_fft=64, ylabel='Transfer function', filen
 
 class Plant:
 
-    def __init__(self, physics, data, plotit=False):
+    def __init__(self, physics, data, plot_dir, noise_files, transfer_files, seed=None):
 
         self.fs = data['sampling_frequency']
         self.T_batch = data['duration_batch']
         self.T_fft = data['duration_fft']
 
-        self.plotit = plotit
-
         self.ns = []                                # noise models read from files as PSDs
         self.tfs = []                               # transfer functions read from files as complex amplitudes
         self.tst_noise_t = []                       # time series of test-mass noise from ISI stage 2, and damping OSEMs at top-mass
+
+        self._rng_state = np.random.RandomState(seed=seed)
 
         self.SiggSidles_fb_sys = []     # state-space model of Sigg-Sidles feedback
         self.pumP_2_tstP_SS_sys = []    # state-space model of pumP (torque) to tstP (angle) with Sigg-Sidles feedback
@@ -141,22 +167,21 @@ class Plant:
         self.dydth_soft = physics['dydth_soft']
         self.dydth_hard = physics['dydth_hard']
 
-        self.set_models(plotit=plotit)              # definition of state-space models
+        self.set_models(plot_dir=plot_dir)              # definition of state-space models
 
-        self.read_noise_from_top(plotit=plotit)             # read models for test-mass pitch noise from ISI/TOP OSEMs
-        self.read_sus_transfer_functions(plotit=plotit)     # read transfer functions ISI/TOP -> TST
-        self.create_tst_noise_from_top(plotit=plotit)       # create batch of test-mass pitch noise from ISI/TOP OSEMs
+        self.read_noise_from_top(noise_files, plot_dir)             # read models for test-mass pitch noise from ISI/TOP OSEMs
+        self.read_sus_transfer_functions(transfer_files, plot_dir)     # read transfer functions ISI/TOP -> TST
+        self.create_tst_noise_from_top(plot_dir)       # create batch of test-mass pitch noise from ISI/TOP OSEMs
 
     def reset_counters(self):
         self.ti = 0
 
-    def read_noise_from_top(self, plotit=False):
-        files = ['n_ISI_L.txt', 'n_osem_L.txt', 'n_osem_P.txt']
+    def read_noise_from_top(self, files, plot_dir):
         units = ['m', 'm', 'rad']
 
         self.ns = []
         for k in range(len(files)):
-            dn = pd.read_csv('./noise_inputs/'+files[k], names=['ff', 'rPSD'], delimiter=' ', skipinitialspace=True)
+            dn = pd.read_csv(files[k], names=['ff', 'rPSD'], delimiter=' ', skipinitialspace=True)
             ff = np.array(dn[['ff']].values.flatten())
             rpsd = np.array(dn[['rPSD']].values.flatten())
 
@@ -165,7 +190,7 @@ class Plant:
 
             self.ns.append({'name': name, 'ff': ff, 'rPSD': rpsd, 'unit': units[k]})
 
-            if plotit:
+            if plot_dir:
                 plt.figure()
                 plt.loglog(ff, rpsd)
                 plt.xlim(0.1, 100)
@@ -173,16 +198,15 @@ class Plant:
                 plt.ylabel('Model spectrum, {0} [{1}]'.format(name, units[k]+'/$\sqrt{\\rm Hz}$'))
                 plt.grid(True)
                 plt.tight_layout()
-                plt.savefig('./plots/' + name + '.png', dpi=300)
+                plt.savefig(os.path.join(plot_dir, name + '.png'), dpi=300)
                 plt.close()
 
-    def read_sus_transfer_functions(self, plotit=False):
-        files = ['tf_topL_2_tstP.txt', 'tf_topNL_2_tstP.txt', 'tf_topNP_2_tstP.txt']
+    def read_sus_transfer_functions(self, files, plot_dir):
         units = [['rad', 'm'], ['rad', 'm'], ['rad', 'rad']]         # unit ['A','B'] means A/B
 
         self.tfs = []
         for k in range(len(files)):
-            dtf = pd.read_csv('./transfer_functions/'+files[k], names=['ff', 'transfer'], delimiter=' ', skipinitialspace=True)
+            dtf = pd.read_csv(files[k], names=['ff', 'transfer'], delimiter=' ', skipinitialspace=True)
             ff = np.array(dtf[['ff']].values.flatten())
             tf = np.array(list(map(complex, dtf[['transfer']].values.flatten())))
 
@@ -191,7 +215,7 @@ class Plant:
 
             self.tfs.append({'name': name, 'ff': ff, 'tf': tf, 'unit': units[k]})
 
-            if plotit:
+            if plot_dir:
                 plt.figure()
                 plt.loglog(ff, np.abs(tf))
                 plt.xlim(0.1, 100)
@@ -199,10 +223,10 @@ class Plant:
                 plt.ylabel(name+' ['+units[k][0]+'/'+units[k][1]+']')
                 plt.grid(True)
                 plt.tight_layout()
-                plt.savefig('./plots/' + name + '.png', dpi=300)
+                plt.savefig(os.path.join(plot_dir, name + '.png'), dpi=300)
                 plt.close()
 
-    def create_tst_noise_from_top(self, plotit=False):
+    def create_tst_noise_from_top(self, plot_dir):
 
         frequencies = np.linspace(0, self.fs//2, self.T_batch*self.fs//2+1)
 
@@ -215,8 +239,8 @@ class Plant:
         noises_t = []
         for k in range(len(self.ns)):
             # Fourier amplitudes of white noise
-            re = np.random.normal(0, norm, len(frequencies))
-            im = np.random.normal(0, norm, len(frequencies))
+            re = self._rng_state.normal(0, norm, len(frequencies))
+            im = self._rng_state.normal(0, norm, len(frequencies))
             wtilde = re + 1j * im
 
             # convolve with noise root PSD (note that ss or [b,a] models lead to divergence)
@@ -230,21 +254,21 @@ class Plant:
             n_t = np.fft.irfft(ctilde) * self.fs
             noises_t.append(n_t)
 
-            if plotit:
+            if plot_dir:
                 name = self.tfs[k]['name']+'x'+self.ns[k]['name']
                 unit = self.tfs[k]['unit'][0]+'/$\sqrt{\\rm Hz}$'
 
                 plot_psd(n_t, self.T_fft, self.fs,
-                         ylabel='Spectrum, {0} [{1}]'.format(name,unit), filename='./plots/'+name+'_S.png')
+                         ylabel='Spectrum, {0} [{1}]'.format(name,unit), filename=os.path.join(plot_dir, name+'_S.png'))
 
         self.tst_noise_t = np.sum(noises_t, 0)
 
-        if plotit:
+        if plot_dir:
             plot_psd(self.tst_noise_t, self.T_fft, self.fs,
                      ylabel='Test-mass pitch noise from ISI and TOP [rad/$\sqrt{\\rm Hz}$]',
-                     filename='./plots/n_tstP_from_isi_top_S.png')
+                     filename=os.path.join(plot_dir, 'n_tstP_from_isi_top_S.png'))
 
-    def set_models(self, plotit=False):
+    def set_models(self, plot_dir):
         """
         The following model is based on the zpk models from
         https://alog.ligo-la.caltech.edu/aLOG/index.php?callRep=41815
@@ -276,9 +300,9 @@ class Plant:
         # the Sigg-Sidles feedback sign needs to be checked
         self.pumP_2_tstP_SS_sys = control.feedback(pumP_2_tstP_sys, SiggSidles_sys, sign=1)
 
-        if plotit:
-            bode_plot(pumP_2_tstP_sys, 'pumP_2_tstP')
-            bode_plot(SiggSidles_sys, 'SiggSidles')
+        if plot_dir:
+            bode_plot(pumP_2_tstP_sys, os.path.join(plot_dir, 'bode_pumP_2_tstP.png'))
+            bode_plot(SiggSidles_sys, os.path.join(plot_dir, 'bode_SiggSidles.png'))
 
     def get_pumP_2_tstP_SS_sys(self):
         return self.pumP_2_tstP_SS_sys
@@ -300,26 +324,37 @@ class Plant:
 
         return output
 
-class Controller:
-
-    def __init__(self, controls, data, plotit=False):
+class Sensors:
+    def __init__(self, sensing, data, seed=None):
 
         self.fs = data['sampling_frequency']
-        self.T_fft = data['duration_fft']
+        self.n_hard = sensing['noise_hard_mode']
 
-        self.n_hard = controls['noise_hard_mode']
+        self._rng_state = np.random.RandomState(seed=seed)
+
+    def sample_readout(self, input_signal=0.):
+
+        input_signal += self._rng_state.normal(0, (self.fs/2.)**0.5 * self.n_hard)
+
+        return input_signal
+
+class Controller:
+
+    def __init__(self, data, plot_dir):
+
+        self.fs = data['sampling_frequency']
 
         self.feedback_sys = []
 
-        self.controller_state = np.zeros((19, 1))
         self.last_controller_input = 0.
+        self.controller_state = np.zeros((19, 1))
 
-        self.set_feedback_filter(plotit)
+        self.set_feedback_filter(plot_dir)
 
     def reset_counters(self):
         pass
 
-    def set_feedback_filter(self, plotit=False):
+    def set_feedback_filter(self, plot_dir):
         # Example: ASC feedback filter used 2019(?) at LIGO for hard mode
 
         ## dc gain 30 for low noise; 50 for high bandwidth
@@ -365,12 +400,10 @@ class Controller:
         [num, den] = signal.zpk2tf(zz, pp, k)
         self.feedback_sys = control.series(self.feedback_sys, control.tf2ss(control.TransferFunction(num, den)))
 
-        if plotit:
-            bode_plot(self.feedback_sys, 'feedback')
+        if plot_dir:
+            bode_plot(self.feedback_sys, os.path.join(plot_dir, 'feedback.png'))
 
     def sample_feedback(self, input_signal=0.):
-
-        input_signal += np.random.normal(0, (self.fs/2.)**0.5 * self.n_hard)
 
         t, output, x = control.forced_response(self.feedback_sys, U=[self.last_controller_input, input_signal],
                                                T=[0, 1./self.fs], X0=self.controller_state)
@@ -380,13 +413,10 @@ class Controller:
 
         return output[1]
 
-    def get_last_controller_input(self):
-        return self.last_controller_input
-
     def get_feedback_filter_sys(self):
         return self.feedback_sys
 
-def open_loop_run(asc_plant, asc_controller, data):
+def open_loop_run(asc_plant, asc_sensing, asc_controller, data, plot_dir):
     asc_plant.reset_counters()
 
     N = data['duration_batch']*data['sampling_frequency']
@@ -396,8 +426,8 @@ def open_loop_run(asc_plant, asc_controller, data):
     control_t = np.zeros((N,))
     for k in range(N-1):
         tstP_t[k+1] = asc_plant.sample_tstP()
-        control_t[k+1] = asc_controller.sample_feedback(input_signal=tstP_t[k+1])
-        readout_t[k+1] = asc_controller.get_last_controller_input()
+        readout_t[k+1] = asc_sensing.sample_readout(input_signal=tstP_t[k+1])
+        control_t[k+1] = asc_controller.sample_feedback(input_signal=readout_t[k+1])
         if np.abs(tstP_t[k+1])>1:
             print('Diverging time series at', np.round(100.*k/N),'%')
             sys.exit(0)
@@ -405,13 +435,13 @@ def open_loop_run(asc_plant, asc_controller, data):
             print(np.round(100.*k/N), '% done of open-loop simulation')
 
     plot_psd(tstP_t, data['duration_fft'], data['sampling_frequency'],
-             ylabel='TST P [rad/$\sqrt{\\rm Hz}$]', filename='./plots/tstP_open_loop.png')
+             ylabel='TST P [rad/$\sqrt{\\rm Hz}$]', filename=os.path.join(plot_dir, 'tstP_open_loop.png'))
     plot_psd(control_t, data['duration_fft'], data['sampling_frequency'],
-             ylabel='Control output [Nm/$\sqrt{\\rm Hz}$]', filename='./plots/control_output_open_loop.png')
+             ylabel='Control output [Nm/$\sqrt{\\rm Hz}$]', filename=os.path.join(plot_dir, 'control_output_open_loop.png'))
     plot_psd(readout_t, data['duration_fft'], data['sampling_frequency'],
-             ylabel='Control input [rad/$\sqrt{\\rm Hz}$]', filename='./plots/control_input_open_loop.png')
+             ylabel='Control input [rad/$\sqrt{\\rm Hz}$]', filename=os.path.join(plot_dir, 'control_input_open_loop.png'))
 
-def closed_loop_run(asc_plant, asc_controller, data):
+def closed_loop_run(asc_plant, asc_sensing, asc_controller, data, plot_dir, reference_data_file):
     asc_plant.reset_counters()
 
     N = data['duration_batch']*data['sampling_frequency']
@@ -421,8 +451,8 @@ def closed_loop_run(asc_plant, asc_controller, data):
     control_t = np.zeros((N,))
     for k in range(N-1):
         tstP_t[k+1] = asc_plant.sample_tstP(pum_input_signal=-control_t[k])
-        control_t[k+1] = asc_controller.sample_feedback(input_signal=tstP_t[k+1])
-        readout_t[k+1] = asc_controller.get_last_controller_input()
+        readout_t[k+1] = asc_sensing.sample_readout(input_signal=tstP_t[k+1])
+        control_t[k+1] = asc_controller.sample_feedback(input_signal=readout_t[k+1])
         if np.abs(tstP_t[k+1]) > 1:
             print('Diverging time series at', np.round(100.*k/N),'%')
             sys.exit(0)
@@ -430,74 +460,11 @@ def closed_loop_run(asc_plant, asc_controller, data):
             print(np.round(100.*k/N), '% done of closed-loop simulation')
 
     plot_psd(tstP_t, data['duration_fft'], data['sampling_frequency'],
-             ylabel='TST P [rad/$\sqrt{\\rm Hz}$]', filename='./plots/tstP_closed_loop.png')
+             ylabel='TST P [rad/$\sqrt{\\rm Hz}$]', filename=os.path.join(plot_dir, 'tstP_closed_loop.png'))
+    plot_hoft(tstP_t, data['duration_fft'], data['sampling_frequency'],
+              reference_data_file=reference_data_file,
+              filename=os.path.join(plot_dir, 'StrainNoise.png'))
     plot_psd(control_t, data['duration_fft'], data['sampling_frequency'],
-             ylabel='Control output [Nm/$\sqrt{\\rm Hz}$]', filename='./plots/control_output_closed_loop.png')
+             ylabel='Control output [Nm/$\sqrt{\\rm Hz}$]', filename=os.path.join(plot_dir, 'control_output_closed_loop.png'))
     plot_psd(readout_t, data['duration_fft'], data['sampling_frequency'],
-             ylabel='Control input [rad/$\sqrt{\\rm Hz}$]', filename='./plots/control_input_closed_loop.png')
-
-
-"""
-TO-DO
-1) Implement angular to length coupling and simulate DARM noise to get a performance evaluation of ASC control. For
-   this, the function bilinear.py can be used, which was developed by the Caltech group (R Adhikari et al).
-"""
-
-def main(args):
-    # later, use args this way to turn them into values: float(args['critic_lr'])
-    data = {'sampling_frequency': int(args['fs']), 'duration_batch': int(args['T_batch']), 'duration_fft': int(args['T_fft'])}
-    physics = {'P': float(args['P']), 'dydth_soft': float(args['dydth_soft']), 'dydth_hard': float(args['dydth_hard'])}
-    controls = {'noise_hard_mode': float(args['n_hard'])}
-
-    asc_plant = Plant(physics, data, plotit=False)
-    asc_controller = Controller(controls, data, plotit=False)
-
-    transfer_functions = True
-    sim_open_loop = True
-    sim_closed_loop = True
-
-    if transfer_functions:
-        # bode plots of state-space models
-        open_loop_sys = control.series(asc_plant.get_pumP_2_tstP_SS_sys(), asc_controller.get_feedback_filter_sys())
-        bode_plot(open_loop_sys, filename='open_loop')
-        analyze_sys(open_loop_sys, filename='open_loop')
-
-        # measure transfer functions (with white noise input)
-        asc_plant.reset_counters()
-        transfer_function(open_loop_sys, data['duration_batch'], data['sampling_frequency'],
-                          filename='./plots/bode_open_loop_measured.png')
-
-        transfer_function(asc_controller.get_feedback_filter_sys(), data['duration_batch'], data['sampling_frequency'],
-                          filename='./plots/bode_feedback_measured.png')
-
-    # open-loop simulation
-    if sim_open_loop:
-        open_loop_run(asc_plant, asc_controller, data)
-
-    # closed-loop simulation
-    if sim_closed_loop:
-        closed_loop_run(asc_plant, asc_controller, data)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='provide arguments for ASC simulation')
-
-    # simulation settings
-    parser.add_argument('--fs', help='sampling frequency [Hz]', default=256)
-    parser.add_argument('--T_batch', help='duration of time-series of input noises [s]', default=1024)
-    parser.add_argument('--T_fft', help='duration of FFT segment for plots [s]', default=64)
-
-    # plant parameters
-    parser.add_argument('--P', help='light power inside arm cavities [W]', default=56700)
-    parser.add_argument('--dydth_soft', help='beam offset to angle coefficient [m/rad]', default=-2.1e3)
-    parser.add_argument('--dydth_hard', help='beam offset to angle coefficient [m/rad]', default=4.5e4)
-
-    parser.add_argument('--n_hard', help='Spectral density of hard-mode readout noise [rad/rtHz]', default=1e-13)
-
-    args = vars(parser.parse_args())
-
-    pp.pprint(args)
-
-    start_time = time.time()
-    main(args)
-    print("--- %s seconds ---" % np.round(time.time() - start_time))
+             ylabel='Control input [rad/$\sqrt{\\rm Hz}$]', filename=os.path.join(plot_dir, 'control_input_closed_loop.png'))
