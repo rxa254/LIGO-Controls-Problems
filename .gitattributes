@@ -1,0 +1,4 @@
+QuadSUSdamping/Quad_Sensors_Actuators.pdf filter=lfs diff=lfs merge=lfs -text
+QuadSUSdamping/Quad_Sensors_Actuators.png filter=lfs diff=lfs merge=lfs -text
+QuadSUSdamping/d060218_bosem_assembly.easm filter=lfs diff=lfs merge=lfs -text
+QuadSUSdamping/quad_sketch.jpg filter=lfs diff=lfs merge=lfs -text
