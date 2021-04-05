@@ -1,6 +1,11 @@
 # LIGO Controls Problems
 A few examples of control system challenges in the LIGO project, so that clever interested researchers can help to solve them.
 
+### Contribution / Usage guide
+* make sure you have GIT LFS configured: run ```git lfs install``` from the repo root dir after cloning the first time
+* use `git lfs track` before doing `git add` for binary files which you want to store, but don't need version control
+
+
 ### Table of Contents
 * [Damping of Mirror Suspension](#sus_damping)
    - [Background](#background_sus)
